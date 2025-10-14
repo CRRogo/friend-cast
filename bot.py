@@ -48,6 +48,9 @@ class FriendCastBot(discord.Client):
 
 client = FriendCastBot()
 
+# Global variable to keep browser drivers alive
+active_drivers = []
+
 
 def is_allowed_channel(interaction: discord.Interaction) -> bool:
     """Check if the command is being used in an allowed channel"""
@@ -195,30 +198,149 @@ def test_browser_tiling() -> None:
         root.destroy()
 
 
-def test_browser_control_advanced() -> None:
+def test_plex_search() -> None:
+    """Test function to search for 'Hot Ones' on Plex TV and click the first result"""
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.keys import Keys
+        import time
+        
+        print("Testing Plex TV search for 'Hot Ones'...")
+        
+        # Configure Chrome options
+        chrome_options = Options()
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        
+        # Create driver
+        driver = webdriver.Chrome(options=chrome_options)
+        
+        try:
+            # Navigate to Plex TV
+            print("Navigating to Plex TV...")
+            driver.get("https://app.plex.tv/desktop/#!/live-tv")
+            
+            # Wait for page to load
+            print("Waiting for page to load...")
+            time.sleep(10)
+            
+            # Debug: Print page title and URL
+            print(f"Page title: {driver.title}")
+            print(f"Current URL: {driver.current_url}")
+            
+            # Find the search input
+            print("Looking for search input...")
+            search_input = WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.ID, "quickSearchInput"))
+            )
+            
+            print("Found search input, typing 'hot ones'...")
+            
+            # Clear any existing text and type "hot ones"
+            search_input.clear()
+            search_input.send_keys("hot ones")
+            
+            # Wait 5 seconds for search results to appear
+            print("Waiting 5 seconds for search results...")
+            time.sleep(5)
+            
+            # Look for the first search result
+            print("Looking for first search result...")
+            first_result = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".SearchResultListRow-container-eOnSD1"))
+            )
+            
+            print("Found first search result, clicking it...")
+            first_result.click()
+            
+            print("SUCCESS: First search result clicked!")
+            
+            # Take a screenshot after clicking
+            driver.save_screenshot("plex_search_success.png")
+            print("Screenshot saved as plex_search_success.png")
+            
+            # Keep window open for inspection
+            print("Window will stay open for 30 seconds for inspection...")
+            time.sleep(30)
+            
+        except Exception as e:
+            print(f"Error during Plex search: {e}")
+            driver.save_screenshot("plex_search_error.png")
+            print("Error screenshot saved as plex_search_error.png")
+            
+        finally:
+            print("Closing browser...")
+            driver.quit()
+            
+    except ImportError:
+        print("ERROR: Selenium not installed. Install with: py -3 -m pip install selenium")
+    except Exception as e:
+        print(f"ERROR: Plex search failed: {e}")
+
+
+def test_browser_control_advanced(preset="default") -> None:
     """Test function to open and control browser windows with tracking"""
     try:
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
         import time
         
-        print("Testing advanced browser control with window tracking...")
+        print(f"Testing advanced browser control with preset: {preset}")
         
-        # URLs to open
-        urls = [
-            "https://www.google.com",
-            "https://www.youtube.com", 
-            "https://www.github.com",
-            "https://www.stackoverflow.com"
-        ]
+        # Define presets
+        presets = {
+            "default": [
+                "https://www.google.com",
+                "https://www.youtube.com", 
+                "https://www.github.com",
+                "https://www.stackoverflow.com"
+            ],
+            "social": [
+                "https://www.facebook.com",
+                "https://www.twitter.com",
+                "https://www.instagram.com",
+                "https://www.linkedin.com"
+            ],
+            "work": [
+                "https://www.gmail.com",
+                "https://www.calendar.google.com",
+                "https://www.drive.google.com",
+                "https://www.meet.google.com"
+            ],
+            "news": [
+                "https://www.bbc.com",
+                "https://www.cnn.com",
+                "https://www.reuters.com",
+                "https://www.npr.org"
+            ],
+            "entertainment": [
+                "https://www.netflix.com",
+                "https://www.youtube.com",
+                "https://www.twitch.tv",
+                "https://www.hulu.com"
+            ],
+            "development": [
+                "https://www.github.com",
+                "https://www.stackoverflow.com",
+                "https://www.dev.to",
+                "https://www.codepen.io"
+            ]
+        }
         
-        # New URLs to navigate to
-        new_urls = [
-            "https://www.reddit.com",
-            "https://www.twitter.com", 
-            "https://www.linkedin.com",
-            "https://www.netflix.com"
-        ]
+        # Get the preset configuration
+        if preset not in presets:
+            print(f"Unknown preset: {preset}")
+            print(f"Available presets: {', '.join(presets.keys())}")
+            return
+            
+        urls = presets[preset]
+        
+        print(f"Using preset '{preset}' with {len(urls)} URLs")
         
         # Configure Chrome options
         chrome_options = Options()
@@ -257,32 +379,20 @@ def test_browser_control_advanced() -> None:
                 print(f"Failed to open window {i+1}: {e}")
         
         print(f"\nSuccessfully opened {len(drivers)} windows!")
-        print("Waiting 3 seconds before changing URLs...")
-        time.sleep(3)
+        print("Windows are now open and ready to use!")
+        print("They will remain open until you manually close them.")
         
-        # Now change URLs in each tracked window
-        print("\nChanging URLs in tracked windows...")
-        for i, driver in enumerate(drivers):
-            try:
-                new_url = new_urls[i]
-                print(f"Window {i+1}: Changing to {new_url}")
-                driver.get(new_url)
+        # Keep the drivers alive by storing them globally
+        global active_drivers
+        active_drivers = drivers
+        
+        # Keep the function running to prevent garbage collection
+        print("Press Ctrl+C to exit (windows will stay open)")
+        try:
+            while True:
                 time.sleep(1)
-                
-            except Exception as e:
-                print(f"Failed to change URL in window {i+1}: {e}")
-        
-        print("\nSUCCESS: All windows updated!")
-        print("Press Enter to close all windows...")
-        input()
-        
-        # Close all tracked windows
-        for i, driver in enumerate(drivers):
-            try:
-                driver.quit()
-                print(f"Closed window {i+1}")
-            except Exception as e:
-                print(f"Failed to close window {i+1}: {e}")
+        except KeyboardInterrupt:
+            print("\nExiting... Windows will remain open.")
                 
     except ImportError:
         print("ERROR: Selenium not installed. Install with: py -3 -m pip install selenium")
@@ -331,10 +441,15 @@ if __name__ == "__main__":
             print("Testing browser control function...")
             test_browser_control()
         elif sys.argv[1] == "advanced":
-            print("Testing advanced browser control function...")
-            test_browser_control_advanced()
+            preset = sys.argv[2] if len(sys.argv) > 2 else "default"
+            print(f"Testing advanced browser control function with preset: {preset}")
+            test_browser_control_advanced(preset)
+        elif sys.argv[1] == "plex":
+            print("Testing Plex TV search...")
+            test_plex_search()
         else:
-            print("Usage: py -3 bot.py [test|control|advanced]")
+            print("Usage: py -3 bot.py [test|control|advanced [preset]|plex]")
+            print("Available presets: default, social, work, news, entertainment, development")
     else:
         main()
 
