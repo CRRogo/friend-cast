@@ -198,6 +198,55 @@ def test_browser_tiling() -> None:
         root.destroy()
 
 
+def plex_search_and_watch(driver, search_query: str) -> None:
+    """Function to search for a show on Plex TV and click the first result using existing driver"""
+    try:
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        import time
+        
+        print(f"Searching Plex TV for: {search_query}")
+        
+        # Navigate to Plex TV
+        print("Navigating to Plex TV...")
+        driver.get("https://app.plex.tv/desktop/#!/live-tv")
+        
+        # Wait for page to load
+        print("Waiting for page to load...")
+        time.sleep(10)
+        
+        # Find the search input
+        print("Looking for search input...")
+        search_input = WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.ID, "quickSearchInput"))
+        )
+        
+        print(f"Found search input, typing '{search_query}'...")
+        
+        # Clear any existing text and type the search query
+        search_input.clear()
+        search_input.send_keys(search_query)
+        
+        # Wait 5 seconds for search results to appear
+        print("Waiting 5 seconds for search results...")
+        time.sleep(5)
+        
+        # Look for the first search result
+        print("Looking for first search result...")
+        first_result = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".SearchResultListRow-container-eOnSD1"))
+        )
+        
+        print("Found first search result, clicking it...")
+        first_result.click()
+        
+        print(f"SUCCESS: Clicked on '{search_query}' search result!")
+        
+    except Exception as e:
+        print(f"Error during Plex search: {e}")
+
+
 def test_plex_search() -> None:
     """Test function to search for 'Hot Ones' on Plex TV and click the first result"""
     try:
@@ -227,7 +276,7 @@ def test_plex_search() -> None:
             
             # Wait for page to load
             print("Waiting for page to load...")
-            time.sleep(10)
+            time.sleep(3)
             
             # Debug: Print page title and URL
             print(f"Page title: {driver.title}")
@@ -246,8 +295,8 @@ def test_plex_search() -> None:
             search_input.send_keys("hot ones")
             
             # Wait 5 seconds for search results to appear
-            print("Waiting 5 seconds for search results...")
-            time.sleep(5)
+            print("Waiting 2 seconds for search results...")
+            time.sleep(2)
             
             # Look for the first search result
             print("Looking for first search result...")
@@ -266,7 +315,7 @@ def test_plex_search() -> None:
             
             # Keep window open for inspection
             print("Window will stay open for 30 seconds for inspection...")
-            time.sleep(30)
+            time.sleep(5)
             
         except Exception as e:
             print(f"Error during Plex search: {e}")
@@ -295,40 +344,46 @@ def test_browser_control_advanced(preset="default") -> None:
         # Define presets
         presets = {
             "default": [
-                "https://www.google.com",
-                "https://www.youtube.com", 
-                "https://www.github.com",
-                "https://www.stackoverflow.com"
+                {"type": "URL", "query": "https://www.google.com"},
+                {"type": "URL", "query": "https://www.youtube.com"},
+                {"type": "URL", "query": "https://www.github.com"},
+                {"type": "URL", "query": "https://www.stackoverflow.com"}
             ],
             "social": [
-                "https://www.facebook.com",
-                "https://www.twitter.com",
-                "https://www.instagram.com",
-                "https://www.linkedin.com"
+                {"type": "URL", "query": "https://www.facebook.com"},
+                {"type": "URL", "query": "https://www.twitter.com"},
+                {"type": "URL", "query": "https://www.instagram.com"},
+                {"type": "URL", "query": "https://www.linkedin.com"}
             ],
             "work": [
-                "https://www.gmail.com",
-                "https://www.calendar.google.com",
-                "https://www.drive.google.com",
-                "https://www.meet.google.com"
+                {"type": "URL", "query": "https://www.gmail.com"},
+                {"type": "URL", "query": "https://www.calendar.google.com"},
+                {"type": "URL", "query": "https://www.drive.google.com"},
+                {"type": "URL", "query": "https://www.meet.google.com"}
             ],
             "news": [
-                "https://www.bbc.com",
-                "https://www.cnn.com",
-                "https://www.reuters.com",
-                "https://www.npr.org"
+                {"type": "URL", "query": "https://www.bbc.com"},
+                {"type": "URL", "query": "https://www.cnn.com"},
+                {"type": "URL", "query": "https://www.reuters.com"},
+                {"type": "URL", "query": "https://www.npr.org"}
             ],
             "entertainment": [
-                "https://www.netflix.com",
-                "https://www.youtube.com",
-                "https://www.twitch.tv",
-                "https://www.hulu.com"
+                {"type": "URL", "query": "https://www.netflix.com"},
+                {"type": "URL", "query": "https://www.youtube.com"},
+                {"type": "URL", "query": "https://www.twitch.tv"},
+                {"type": "URL", "query": "https://www.hulu.com"}
             ],
             "development": [
-                "https://www.github.com",
-                "https://www.stackoverflow.com",
-                "https://www.dev.to",
-                "https://www.codepen.io"
+                {"type": "URL", "query": "https://www.github.com"},
+                {"type": "URL", "query": "https://www.stackoverflow.com"},
+                {"type": "URL", "query": "https://www.dev.to"},
+                {"type": "URL", "query": "https://www.codepen.io"}
+            ],
+            "plex_test": [
+                {"type": "URL", "query": "https://www.google.com"},
+                {"type": "URL", "query": "https://www.youtube.com"},
+                {"type": "plextv", "query": "Hot Ones"},
+                {"type": "URL", "query": "https://www.github.com"}
             ]
         }
         
@@ -338,9 +393,9 @@ def test_browser_control_advanced(preset="default") -> None:
             print(f"Available presets: {', '.join(presets.keys())}")
             return
             
-        urls = presets[preset]
+        items = presets[preset]
         
-        print(f"Using preset '{preset}' with {len(urls)} URLs")
+        print(f"Using preset '{preset}' with {len(items)} items")
         
         # Configure Chrome options
         chrome_options = Options()
@@ -353,13 +408,12 @@ def test_browser_control_advanced(preset="default") -> None:
         print("Opening 4 browser windows...")
         
         # Open each browser window and track it
-        for i, url in enumerate(urls):
+        for i, item in enumerate(items):
             try:
                 # Create a new driver instance for each window
                 driver = webdriver.Chrome(options=chrome_options)
-                driver.get(url)
                 
-                # Position the window (2x2 grid)
+                # Position the window first (2x2 grid)
                 screen_width = 1920  # You can get this dynamically
                 screen_height = 1080
                 window_width = screen_width // 2
@@ -370,6 +424,18 @@ def test_browser_control_advanced(preset="default") -> None:
                 
                 driver.set_window_position(x, y)
                 driver.set_window_size(window_width, window_height)
+                
+                # Handle different types of items
+                if item["type"] == "URL":
+                    driver.get(item["query"])
+                    url = item["query"]
+                elif item["type"] == "plextv":
+                    # For Plex TV, use the same driver but navigate to Plex
+                    plex_search_and_watch(driver, item["query"])
+                    url = f"Plex TV - {item['query']}"
+                else:
+                    print(f"Unknown item type: {item['type']}")
+                    continue
                 
                 drivers.append(driver)
                 print(f"Opened window {i+1}: {url} at position ({x}, {y})")
@@ -449,7 +515,7 @@ if __name__ == "__main__":
             test_plex_search()
         else:
             print("Usage: py -3 bot.py [test|control|advanced [preset]|plex]")
-            print("Available presets: default, social, work, news, entertainment, development")
+            print("Available presets: default, social, work, news, entertainment, development, plex_test")
     else:
         main()
 
