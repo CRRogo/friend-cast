@@ -208,13 +208,16 @@ def plex_search_and_watch(driver, search_query: str) -> None:
         
         print(f"Searching Plex TV for: {search_query}")
         
-        # Navigate to Plex TV
-        print("Navigating to Plex TV...")
-        driver.get("https://app.plex.tv/desktop/#!/live-tv")
-        
-        # Wait for page to load
-        print("Waiting for page to load...")
-        time.sleep(10)
+        # Page should already be loading from --app flag, just wait for it to load
+        # If we're not on the right page, navigate (fallback)
+        current_url = driver.current_url
+        if "plex.tv" not in current_url:
+            print("Navigating to Plex TV...")
+            driver.get("https://app.plex.tv/desktop/#!/live-tv")
+            time.sleep(5)
+        else:
+            print("Already on Plex TV, waiting for page to load...")
+            time.sleep(5)
         
         # Find the search input
         print("Looking for search input...")
@@ -229,16 +232,29 @@ def plex_search_and_watch(driver, search_query: str) -> None:
         search_input.send_keys(search_query)
         
         # Wait 5 seconds for search results to appear
-        print("Waiting 5 seconds for search results...")
-        time.sleep(5)
+        print("Waiting 3 seconds for search results...")
+        time.sleep(3)
         
-        # Look for the first search result
+        # Look for the first search result row first
         print("Looking for first search result...")
         first_result = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, ".SearchResultListRow-container-eOnSD1"))
         )
         
-        print("Found first search result, clicking it...")
+        # Now look for a play button WITHIN the first result row only
+        print("Looking for play button within first search result...")
+        try:
+            # Try to find play button within the first result element
+            play_button = first_result.find_element(By.CSS_SELECTOR, 'button[aria-label="Play"]')
+            print("Found play button in first result, clicking it...")
+            play_button.click()
+            print(f"SUCCESS: Clicked play button for '{search_query}'!")
+            return
+        except Exception as play_error:
+            print(f"Play button not found in first result ({play_error}), clicking first search result...")
+        
+        # Fallback: Click the first search result
+        print("Clicking first search result...")
         first_result.click()
         
         print(f"SUCCESS: Clicked on '{search_query}' search result!")
@@ -384,6 +400,30 @@ def test_browser_control_advanced(preset="default") -> None:
                 {"type": "URL", "query": "https://www.youtube.com"},
                 {"type": "plextv", "query": "Hot Ones"},
                 {"type": "URL", "query": "https://www.github.com"}
+            ],
+            "ow_my_balls": [
+                {"type": "plextv", "query": "https://www.google.com"},
+                {"type": "plextv", "query": "https://www.youtube.com"},
+                {"type": "plextv", "query": "Hot Ones"},
+                {"type": "plextv", "query": "https://www.github.com"}
+            ],
+            "news": [
+                {"type": "plextv", "query": "https://www.google.com"},
+                {"type": "plextv", "query": "https://www.youtube.com"},
+                {"type": "plextv", "query": "Hot Ones"},
+                {"type": "plextv", "query": "https://www.github.com"}
+            ],
+            "sports_bar": [
+                {"type": "plextv", "query": "https://www.google.com"},
+                {"type": "plextv", "query": "https://www.youtube.com"},
+                {"type": "plextv", "query": "Hot Ones"},
+                {"type": "plextv", "query": "https://www.github.com"}
+            ],
+            "christmas": [
+                {"type": "plextv", "query": "hallmark movies & more"},
+                {"type": "plextv", "query": "sweet escapes"},
+                {"type": "plextv", "query": "stingray holidayscapes"},
+                {"type": "plextv", "query": "The great christmas light fight"}
             ]
         }
         
@@ -397,40 +437,117 @@ def test_browser_control_advanced(preset="default") -> None:
         
         print(f"Using preset '{preset}' with {len(items)} items")
         
-        # Configure Chrome options
-        chrome_options = Options()
-        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        
         drivers = []
         
+        # Get actual screen dimensions dynamically
+        root = tk.Tk()
+        root.withdraw()  # Hide the main window
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        root.destroy()
+        
+        # Calculate window dimensions (2x2 grid) - exactly half the screen
+        window_width = screen_width // 2
+        window_height = screen_height // 2
+        
+        print(f"Screen resolution: {screen_width}x{screen_height}")
+        print(f"Window size: {window_width}x{window_height}")
         print("Opening 4 browser windows...")
         
         # Open each browser window and track it
         for i, item in enumerate(items):
             try:
-                # Create a new driver instance for each window
-                driver = webdriver.Chrome(options=chrome_options)
-                
-                # Position the window first (2x2 grid)
-                screen_width = 1920  # You can get this dynamically
-                screen_height = 1080
-                window_width = screen_width // 2
-                window_height = screen_height // 2
-                
+                # Calculate position (2x2 grid) - no gaps, starting from top-left corner
+                # Top-left: (0, 0)
+                # Top-right: (window_width, 0)
+                # Bottom-left: (0, window_height)
+                # Bottom-right: (window_width, window_height)
                 x = (i % 2) * window_width
                 y = (i // 2) * window_height
                 
-                driver.set_window_position(x, y)
-                driver.set_window_size(window_width, window_height)
+                # Configure Chrome options for each window (app mode removes toolbars/tabs)
+                chrome_options = Options()
+                chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+                chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                chrome_options.add_experimental_option('useAutomationExtension', False)
+                
+                # Determine the initial URL for app mode
+                # For both URL and plextv types, set the URL directly in --app to maintain app mode
+                # For URL types, use the query URL directly
+                # For Plex TV, start with the Plex TV URL to maintain app mode, then navigate/search
+                if item["type"] == "URL":
+                    initial_url = item["query"]
+                elif item["type"] == "plextv":
+                    # Start with Plex TV URL in app mode to maintain app mode throughout
+                    initial_url = "https://app.plex.tv/desktop/#!/live-tv"
+                else:
+                    initial_url = "about:blank"
+                
+                # Use app mode to remove toolbars and tab bar
+                # This works for URL types, so we'll use the same approach for plextv
+                chrome_options.add_argument(f"--app={initial_url}")
+                # Additional flags to remove UI elements and ensure clean window
+                chrome_options.add_argument("--disable-infobars")
+                chrome_options.add_argument("--disable-extensions")
+                chrome_options.add_argument("--disable-plugins")
+                chrome_options.add_argument("--disable-notifications")
+                chrome_options.add_argument("--disable-features=TranslateUI")
+                # Remove address bar and other UI elements
+                chrome_options.add_argument("--hide-scrollbars")
+                chrome_options.add_argument("--mute-audio")
+                # Try to force app mode by disabling features that show UI
+                chrome_options.add_argument("--disable-features=BrowserSwitcherUI")
+                chrome_options.add_argument("--disable-features=ChromeWhatsNewUI")
+                
+                # Create a new driver instance for each window
+                driver = webdriver.Chrome(options=chrome_options)
+                
+                # On Windows, we need to account for window decorations (title bar, borders)
+                # Use negative offsets and size adjustments to eliminate gaps between windows
+                # Windows typically has ~8px window frame, so we need to overlap windows slightly
+                border_offset = -8
+                horizontal_overlap = 12  # Horizontal overlap (increased by 2px from 10px)
+                vertical_overlap = 8  # Vertical overlap (reduced by 4px from 10px)
+                
+                # Adjust position: negative offset for left/top edges
+                # For right column, also offset to overlap with left column
+                adjusted_x = x + border_offset if x == 0 else (x - horizontal_overlap if x == window_width else x)
+                adjusted_y = y + border_offset if y == 0 else (y - vertical_overlap if y == window_height else y)
+                
+                # Adjust size: add extra width/height to fill gaps
+                adjusted_width = window_width
+                adjusted_height = window_height
+                
+                # Width adjustments (horizontal)
+                if x == 0:  # Left edge - extend right to fill gap
+                    adjusted_width += horizontal_overlap
+                elif x + window_width == screen_width:  # Right edge - extend to fill screen (needs more to cover gap)
+                    adjusted_width += horizontal_overlap + 10  # Extra 10px to ensure it reaches the edge and covers window frame
+                elif x == window_width:  # Right column (middle) - extend right to overlap with left column
+                    adjusted_width += horizontal_overlap
+                
+                # Height adjustments (vertical)
+                if y == 0:  # Top edge - extend down to fill gap
+                    adjusted_height += vertical_overlap
+                elif y + window_height == screen_height:  # Bottom edge - extend to fill screen
+                    adjusted_height += vertical_overlap
+                elif y == window_height:  # Bottom row (middle) - extend down to overlap with top row
+                    adjusted_height += vertical_overlap
+                
+                # Set window position and size, accounting for borders
+                driver.set_window_rect(adjusted_x, adjusted_y, adjusted_width, adjusted_height)
+                
+                # Force the window to the exact position (sometimes Chrome doesn't respect the first call)
+                time.sleep(0.2)
+                driver.set_window_rect(adjusted_x, adjusted_y, adjusted_width, adjusted_height)
                 
                 # Handle different types of items
                 if item["type"] == "URL":
-                    driver.get(item["query"])
+                    # URL is already loaded via --app flag, wait for it to load
+                    time.sleep(1)
                     url = item["query"]
                 elif item["type"] == "plextv":
-                    # For Plex TV, use the same driver but navigate to Plex
+                    # For Plex TV, navigate to Plex and search
                     plex_search_and_watch(driver, item["query"])
                     url = f"Plex TV - {item['query']}"
                 else:
@@ -504,8 +621,9 @@ if __name__ == "__main__":
             print("Testing browser tiling function...")
             test_browser_tiling()
         elif sys.argv[1] == "control":
-            print("Testing browser control function...")
-            test_browser_control()
+            preset = sys.argv[2] if len(sys.argv) > 2 else "default"
+            print(f"Testing browser control function with preset: {preset}")
+            test_browser_control_advanced(preset)
         elif sys.argv[1] == "advanced":
             preset = sys.argv[2] if len(sys.argv) > 2 else "default"
             print(f"Testing advanced browser control function with preset: {preset}")
