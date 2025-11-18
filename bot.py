@@ -5,7 +5,7 @@ import tkinter as tk
 
 from dotenv import load_dotenv
 import discord
-from discord import app_commands
+from discord import app_commands, scheduled_event
 
 
 def configure_logging() -> None:
@@ -109,8 +109,9 @@ async def streaming(interaction: discord.Interaction, user: discord.Member = Non
         )
 
 
-@client.tree.command(name="watch", description="Open Google.com and respond with the name of the user")
-async def watch(interaction: discord.Interaction) -> None:
+@client.tree.command(name="sync", description="Sync slash commands (removes old duplicates)")
+async def sync(interaction: discord.Interaction) -> None:
+    """Manually sync slash commands to Discord"""
     # Check if command is used in allowed channel
     if not is_allowed_channel(interaction):
         await interaction.response.send_message(
@@ -119,15 +120,192 @@ async def watch(interaction: discord.Interaction) -> None:
         )
         return
     
-    # Open Google.com in the default web browser
+    await interaction.response.defer(ephemeral=True)
+    
     try:
-        webbrowser.open("https://www.google.com")
-        await interaction.response.send_message(
-            f"Hello, **{interaction.user.display_name}**! Opening Google.com..."
-        )
+        guild_id_env = os.getenv("DISCORD_GUILD_ID")
+        
+        # First, sync globally to ensure global commands are up to date
+        synced_global = await client.tree.sync()
+        logging.info(f"Synced {len(synced_global)} command(s) globally")
+        
+        # Then sync to guild if guild_id is set
+        if guild_id_env:
+            guild_id = int(guild_id_env)
+            guild = discord.Object(id=guild_id)
+            client.tree.copy_global_to(guild=guild)
+            synced_guild = await client.tree.sync(guild=guild)
+            logging.info(f"Synced {len(synced_guild)} command(s) to guild {guild_id}")
+            await interaction.followup.send(
+                f"✅ Synced {len(synced_global)} global and {len(synced_guild)} guild command(s).",
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                f"✅ Synced {len(synced_global)} command(s) globally.",
+                ephemeral=True
+            )
     except Exception as e:
+        logging.error(f"Error syncing commands: {e}", exc_info=True)
+        await interaction.followup.send(
+            f"❌ Error syncing commands: {str(e)}",
+            ephemeral=True
+        )
+
+
+def get_presets() -> dict:
+    """Returns the presets dictionary"""
+    return {
+        "default": [
+            {"type": "URL", "query": "https://www.google.com"},
+            {"type": "URL", "query": "https://www.youtube.com"},
+            {"type": "URL", "query": "https://www.github.com"},
+            {"type": "URL", "query": "https://www.stackoverflow.com"}
+        ],
+        "social": [
+            {"type": "URL", "query": "https://www.facebook.com"},
+            {"type": "URL", "query": "https://www.twitter.com"},
+            {"type": "URL", "query": "https://www.instagram.com"},
+            {"type": "URL", "query": "https://www.linkedin.com"}
+        ],
+        "work": [
+            {"type": "URL", "query": "https://www.gmail.com"},
+            {"type": "URL", "query": "https://www.calendar.google.com"},
+            {"type": "URL", "query": "https://www.drive.google.com"},
+            {"type": "URL", "query": "https://www.meet.google.com"}
+        ],
+        "news": [
+            {"type": "URL", "query": "https://www.bbc.com"},
+            {"type": "URL", "query": "https://www.cnn.com"},
+            {"type": "URL", "query": "https://www.reuters.com"},
+            {"type": "URL", "query": "https://www.npr.org"}
+        ],
+        "entertainment": [
+            {"type": "URL", "query": "https://www.netflix.com"},
+            {"type": "URL", "query": "https://www.youtube.com"},
+            {"type": "URL", "query": "https://www.twitch.tv"},
+            {"type": "URL", "query": "https://www.hulu.com"}
+        ],
+        "development": [
+            {"type": "URL", "query": "https://www.github.com"},
+            {"type": "URL", "query": "https://www.stackoverflow.com"},
+            {"type": "URL", "query": "https://www.dev.to"},
+            {"type": "URL", "query": "https://www.codepen.io"}
+        ],
+        "plex_test": [
+            {"type": "URL", "query": "https://www.google.com"},
+            {"type": "URL", "query": "https://www.youtube.com"},
+            {"type": "plextv", "query": "Hot Ones"},
+            {"type": "URL", "query": "https://www.github.com"}
+        ],
+        "ow_my_balls": [
+            {"type": "plextv", "query": "https://www.google.com"},
+            {"type": "plextv", "query": "https://www.youtube.com"},
+            {"type": "plextv", "query": "Hot Ones"},
+            {"type": "plextv", "query": "https://www.github.com"}
+        ],
+        "sports_bar": [
+            {"type": "plextv", "query": "https://www.google.com"},
+            {"type": "plextv", "query": "https://www.youtube.com"},
+            {"type": "plextv", "query": "Hot Ones"},
+            {"type": "plextv", "query": "https://www.github.com"}
+        ],
+        "christmas": [
+            {"type": "plextv", "query": "hallmark movies & more"},
+            {"type": "plextv", "query": "sweet escapes"},
+            {"type": "plextv", "query": "stingray holidayscapes"},
+            {"type": "plextv", "query": "The Great Christmas Light Fight on Places & Spaces"}
+        ],
+        "funny": [
+            {"type": "plextv", "query": "always funny"},
+            {"type": "plextv", "query": "always funny"},
+            {"type": "plextv", "query": "always funny"},
+            {"type": "plextv", "query": "always funny"}
+        ],
+        "vehicles": [
+            {"type": "plextv", "query": "top gear"},
+            {"type": "plextv", "query": "monster jam"},
+            {"type": "plextv", "query": "hot wheels action"},
+            {"type": "plextv", "query": "ice road truckers"}
+        ],
+        "joey": [
+            {"type": "plextv", "query": "hot wheels action"},
+            {"type": "plextv", "query": "monster jam"},
+            {"type": "plextv", "query": "kidoodle tv"},
+            {"type": "plextv", "query": "pbs retro"}
+        ]
+    }
+
+
+async def preset_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    """Autocomplete function for preset parameter"""
+    try:
+        presets_dict = get_presets()
+        preset_names = list(presets_dict.keys())
+        
+        # If no current input, return all presets; otherwise filter
+        if not current:
+            choices = [app_commands.Choice(name=preset, value=preset) for preset in preset_names]
+        else:
+            current_lower = current.lower()
+            choices = [
+                app_commands.Choice(name=preset, value=preset)
+                for preset in preset_names
+                if current_lower in preset.lower()
+            ]
+        return choices[:25]  # Discord limits to 25 choices
+    except Exception as e:
+        logging.error(f"Error in preset_autocomplete: {e}", exc_info=True)
+        # Return empty list on error
+        return []
+
+
+@client.tree.command(name="watch", description="Change windows to preset")
+@app_commands.describe(preset="Each preset will open 4 windows in a tiled arrangement")
+@app_commands.autocomplete(preset=preset_autocomplete)
+async def watch(interaction: discord.Interaction, preset: str) -> None:
+    # Log the received preset value immediately
+    logging.info(f"Watch command called with preset: '{preset}' (type: {type(preset)}, length: {len(preset) if preset else 0})")
+    
+    # Check if command is used in allowed channel
+    if not is_allowed_channel(interaction):
         await interaction.response.send_message(
-            f"Hello, **{interaction.user.display_name}**! (Failed to open browser: {e})"
+            "❌ This command can only be used in the #crr-bot-test channel.",
+            ephemeral=True
+        )
+        return
+    
+    # Defer the response since this might take a moment
+    await interaction.response.defer()
+    
+    try:
+        logging.info(f"Watch command received: preset={preset}")
+        # Import the function to update windows
+        import asyncio
+        import concurrent.futures
+        
+        # Run the window update in a thread to avoid blocking
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            result = await loop.run_in_executor(executor, update_windows_to_preset, preset)
+        
+        logging.info(f"Watch command result: {result}")
+        
+        if result:
+            await interaction.followup.send(
+                f"✅ Windows updated to preset: **{preset}**"
+            )
+        else:
+            await interaction.followup.send(
+                f"❌ Failed to update windows. Preset '{preset}' may not exist or an error occurred."
+            )
+    except Exception as e:
+        logging.error(f"Error in watch command: {e}", exc_info=True)
+        await interaction.followup.send(
+            f"❌ Error: {str(e)}"
         )
 
 
@@ -202,65 +380,67 @@ def plex_search_and_watch(driver, search_query: str) -> None:
     """Function to search for a show on Plex TV and click the first result using existing driver"""
     try:
         from selenium.webdriver.common.by import By
+        from selenium.webdriver.common.keys import Keys
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
         import time
         
-        print(f"Searching Plex TV for: {search_query}")
+        logging.info(f"Searching Plex TV for: {search_query}")
         
-        # Page should already be loading from --app flag, just wait for it to load
-        # If we're not on the right page, navigate (fallback)
-        current_url = driver.current_url
-        if "plex.tv" not in current_url:
-            print("Navigating to Plex TV...")
-            driver.get("https://app.plex.tv/desktop/#!/live-tv")
-            time.sleep(5)
-        else:
-            print("Already on Plex TV, waiting for page to load...")
-            time.sleep(5)
+        # Always navigate to about:blank first to reset the state and clear any overlays
+        # This is necessary to ensure we can change window content, especially when updating existing windows
+        driver.get("about:blank")
+        time.sleep(1)
+        
+        # Now navigate to Plex TV
+        driver.get("https://app.plex.tv/desktop/#!/live-tv")
+        time.sleep(5)
         
         # Find the search input
-        print("Looking for search input...")
         search_input = WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.ID, "quickSearchInput"))
         )
         
-        print(f"Found search input, typing '{search_query}'...")
+        # Wait for search input to be interactable
+        WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, "quickSearchInput"))
+        )
         
         # Clear any existing text and type the search query
-        search_input.clear()
+        try:
+            search_input.clear()
+        except Exception:
+            # If clear fails, try selecting all and deleting
+            search_input.send_keys(Keys.CONTROL + "a")
+            search_input.send_keys(Keys.DELETE)
+        
         search_input.send_keys(search_query)
         
-        # Wait 5 seconds for search results to appear
-        print("Waiting 3 seconds for search results...")
+        # Wait for search results to appear
         time.sleep(3)
         
         # Look for the first search result row first
-        print("Looking for first search result...")
         first_result = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, ".SearchResultListRow-container-eOnSD1"))
         )
         
         # Now look for a play button WITHIN the first result row only
-        print("Looking for play button within first search result...")
         try:
             # Try to find play button within the first result element
             play_button = first_result.find_element(By.CSS_SELECTOR, 'button[aria-label="Play"]')
-            print("Found play button in first result, clicking it...")
             play_button.click()
-            print(f"SUCCESS: Clicked play button for '{search_query}'!")
+            logging.info(f"Clicked play button for '{search_query}'")
             return
-        except Exception as play_error:
-            print(f"Play button not found in first result ({play_error}), clicking first search result...")
+        except Exception:
+            # Play button not found, fall back to clicking the first result (this is expected)
+            pass
         
         # Fallback: Click the first search result
-        print("Clicking first search result...")
         first_result.click()
-        
-        print(f"SUCCESS: Clicked on '{search_query}' search result!")
+        logging.info(f"Clicked on '{search_query}' search result")
         
     except Exception as e:
-        print(f"Error during Plex search: {e}")
+        logging.error(f"Error during Plex search: {e}", exc_info=True)
 
 
 def test_plex_search() -> None:
@@ -348,7 +528,146 @@ def test_plex_search() -> None:
         print(f"ERROR: Plex search failed: {e}")
 
 
-def test_browser_control_advanced(preset="default") -> None:
+def update_windows_to_preset(preset: str) -> bool:
+    """Update existing 4 windows to show a new preset, or open them if they don't exist"""
+    global active_drivers
+    
+    logging.info(f"update_windows_to_preset called with preset: {preset}")
+    logging.info(f"Current active_drivers count: {len(active_drivers)}")
+    
+    # Check if we have 4 windows open, if not, open them
+    if len(active_drivers) != 4:
+        logging.info(f"Windows not open (found {len(active_drivers)}), opening new windows with preset: {preset}")
+        try:
+            # Open windows using the existing function (keep_alive=False so it returns immediately)
+            test_browser_control_advanced(preset, keep_alive=False)
+            # Wait a moment for windows to open
+            import time
+            time.sleep(3)
+            # Check again if windows are now open
+            if len(active_drivers) != 4:
+                logging.error(f"Failed to open windows. Found {len(active_drivers)} windows.")
+                return False
+            logging.info(f"Successfully opened {len(active_drivers)} windows")
+            return True
+        except Exception as e:
+            logging.error(f"Error opening windows: {e}", exc_info=True)
+            return False
+    
+    # Get the presets using the shared function
+    presets = get_presets()
+    
+    if preset not in presets:
+        logging.error(f"Unknown preset: {preset}")
+        return False
+    
+    items = presets[preset]
+    
+    if len(items) != 4:
+        logging.error(f"Preset must have exactly 4 items, found {len(items)}")
+        return False
+    
+    logging.info(f"Updating windows to preset: {preset}")
+    
+    # Update each window
+    for i, (driver, item) in enumerate(zip(active_drivers, items)):
+        try:
+            # Check if driver is still valid
+            try:
+                driver.current_url  # Verify driver is still active
+            except Exception as e:
+                logging.error(f"Window {i+1} driver is invalid: {e}")
+                return False
+            
+            if item["type"] == "URL":
+                import time
+                # Navigate to about:blank first to reset state
+                try:
+                    driver.get("about:blank")
+                    time.sleep(1)
+                except Exception:
+                    pass
+                # Now navigate to the target URL
+                try:
+                    # Try normal navigation first
+                    driver.get(item["query"])
+                    time.sleep(2)  # Wait for page to load
+                except Exception as nav_error:
+                    # If normal navigation fails (e.g., app mode), try JavaScript
+                    try:
+                        driver.execute_script(f"window.location.href = '{item['query']}';")
+                        time.sleep(3)  # Wait for navigation
+                    except Exception as js_error:
+                        logging.error(f"Navigation failed for window {i+1}: {js_error}")
+                        raise
+                # Mute audio for windows after the first one
+                if i > 0:
+                    import time
+                    time.sleep(1)
+                    try:
+                        driver.execute_script("""
+                            document.querySelectorAll('audio, video').forEach(function(media) {
+                                media.muted = true;
+                                media.volume = 0;
+                            });
+                            var observer = new MutationObserver(function(mutations) {
+                                document.querySelectorAll('audio, video').forEach(function(media) {
+                                    if (!media.muted) {
+                                        media.muted = true;
+                                        media.volume = 0;
+                                    }
+                                });
+                            });
+                            observer.observe(document.body, { childList: true, subtree: true });
+                        """)
+                    except:
+                        pass
+            elif item["type"] == "plextv":
+                plex_search_and_watch(driver, item["query"])
+                # Mute audio for windows after the first one
+                if i > 0:
+                    import time
+                    time.sleep(2)
+                    try:
+                        driver.execute_script("""
+                            document.querySelectorAll('audio, video').forEach(function(media) {
+                                media.muted = true;
+                                media.volume = 0;
+                            });
+                            var observer = new MutationObserver(function(mutations) {
+                                document.querySelectorAll('audio, video').forEach(function(media) {
+                                    if (!media.muted) {
+                                        media.muted = true;
+                                        media.volume = 0;
+                                    }
+                                });
+                            });
+                            observer.observe(document.body, { childList: true, subtree: true });
+                        """)
+                    except:
+                        pass
+            
+            # Small delay between window updates to avoid overwhelming the system
+            import time
+            time.sleep(0.5)
+            
+        except Exception as e:
+            logging.error(f"Error updating window {i+1}: {e}", exc_info=True)
+            return False
+    
+    # Final verification - check that all windows are still valid
+    for i, driver in enumerate(active_drivers):
+        try:
+            driver.current_url  # Verify driver is still active
+        except Exception as e:
+            logging.error(f"Window {i+1} is invalid after update: {e}")
+            return False
+    
+    logging.info(f"Successfully updated all windows to preset: {preset}")
+    return True
+
+
+def test_browser_control_advanced(preset="default", keep_alive=True) -> None:
     """Test function to open and control browser windows with tracking"""
     try:
         from selenium import webdriver
@@ -357,93 +676,8 @@ def test_browser_control_advanced(preset="default") -> None:
         
         print(f"Testing advanced browser control with preset: {preset}")
         
-        # Define presets
-        presets = {
-            "default": [
-                {"type": "URL", "query": "https://www.google.com"},
-                {"type": "URL", "query": "https://www.youtube.com"},
-                {"type": "URL", "query": "https://www.github.com"},
-                {"type": "URL", "query": "https://www.stackoverflow.com"}
-            ],
-            "social": [
-                {"type": "URL", "query": "https://www.facebook.com"},
-                {"type": "URL", "query": "https://www.twitter.com"},
-                {"type": "URL", "query": "https://www.instagram.com"},
-                {"type": "URL", "query": "https://www.linkedin.com"}
-            ],
-            "work": [
-                {"type": "URL", "query": "https://www.gmail.com"},
-                {"type": "URL", "query": "https://www.calendar.google.com"},
-                {"type": "URL", "query": "https://www.drive.google.com"},
-                {"type": "URL", "query": "https://www.meet.google.com"}
-            ],
-            "news": [
-                {"type": "URL", "query": "https://www.bbc.com"},
-                {"type": "URL", "query": "https://www.cnn.com"},
-                {"type": "URL", "query": "https://www.reuters.com"},
-                {"type": "URL", "query": "https://www.npr.org"}
-            ],
-            "entertainment": [
-                {"type": "URL", "query": "https://www.netflix.com"},
-                {"type": "URL", "query": "https://www.youtube.com"},
-                {"type": "URL", "query": "https://www.twitch.tv"},
-                {"type": "URL", "query": "https://www.hulu.com"}
-            ],
-            "development": [
-                {"type": "URL", "query": "https://www.github.com"},
-                {"type": "URL", "query": "https://www.stackoverflow.com"},
-                {"type": "URL", "query": "https://www.dev.to"},
-                {"type": "URL", "query": "https://www.codepen.io"}
-            ],
-            "plex_test": [
-                {"type": "URL", "query": "https://www.google.com"},
-                {"type": "URL", "query": "https://www.youtube.com"},
-                {"type": "plextv", "query": "Hot Ones"},
-                {"type": "URL", "query": "https://www.github.com"}
-            ],
-            "ow_my_balls": [
-                {"type": "plextv", "query": "failarmy"},
-                {"type": "plextv", "query": "WipeoutXtra"},
-                {"type": "plextv", "query": "always funny"},
-                {"type": "plextv", "query": "fear factor"}
-            ],
-            "funny": [
-                {"type": "plextv", "query": "national lampoon free"},
-                {"type": "plextv", "query": "failarmy"},
-                {"type": "plextv", "query": "WipeoutXtra"},
-                {"type": "plextv", "query": "always funny"}
-            ],
-            "news": [
-                {"type": "plextv", "query": "cbs news"},
-                {"type": "plextv", "query": "accuweather now"},
-                {"type": "plextv", "query": "nbc news now"},
-                {"type": "plextv", "query": "CBS News Baltimore"}
-            ],
-            "sports_bar": [
-                {"type": "plextv", "query": "https://www.google.com"},
-                {"type": "plextv", "query": "https://www.youtube.com"},
-                {"type": "plextv", "query": "Hot Ones"},
-                {"type": "plextv", "query": "https://www.github.com"}
-            ],
-            "christmas": [
-                {"type": "plextv", "query": "hallmark movies & more"},
-                {"type": "plextv", "query": "sweet escapes"},
-                {"type": "plextv", "query": "stingray holidayscapes"},
-                {"type": "plextv", "query": "The great christmas light fight"}
-            ],
-            "vehicles": [
-                {"type": "plextv", "query": "top gear"},
-                {"type": "plextv", "query": "monster jam"},
-                {"type": "plextv", "query": "hot wheels action"},
-                {"type": "plextv", "query": "ice road truckers"}
-            ],
-            "joey": [
-                {"type": "plextv", "query": "hot wheels action"},
-                {"type": "plextv", "query": "monster jam"},
-                {"type": "plextv", "query": "kidoodle tv"},
-                {"type": "plextv", "query": "transformers"}
-            ]
-        }
+        # Get the presets using the shared function
+        presets = get_presets()
         
         # Get the preset configuration
         if preset not in presets:
@@ -568,19 +802,16 @@ def test_browser_control_advanced(preset="default") -> None:
                 # If Chrome user data doesn't exist, continue without it (will use default profile)
                 
                 # Determine the initial URL for app mode
-                # For both URL and plextv types, set the URL directly in --app to maintain app mode
-                # For URL types, use the query URL directly
-                # For Plex TV, start with the Plex TV URL to maintain app mode, then navigate/search
+                # For URL types, use the target URL directly in --app to maintain app mode
+                # For Plex TV, use the Plex TV URL directly in --app to maintain app mode
                 if item["type"] == "URL":
                     initial_url = item["query"]
                 elif item["type"] == "plextv":
-                    # Start with Plex TV URL in app mode to maintain app mode throughout
                     initial_url = "https://app.plex.tv/desktop/#!/live-tv"
                 else:
                     initial_url = "about:blank"
                 
                 # Use app mode to remove toolbars and tab bar
-                # This works for URL types, so we'll use the same approach for plextv
                 chrome_options.add_argument(f"--app={initial_url}")
                 # Additional flags to remove UI elements and ensure clean window
                 chrome_options.add_argument("--disable-infobars")
@@ -648,8 +879,8 @@ def test_browser_control_advanced(preset="default") -> None:
                 
                 # Handle different types of items
                 if item["type"] == "URL":
-                    # URL is already loaded via --app flag, wait for it to load
-                    time.sleep(1)
+                    # URL is already loaded via --app flag, just wait for it to load
+                    time.sleep(2)  # Wait for page to load
                     # If this window should be muted (i > 0), mute all audio elements
                     if i > 0:
                         try:
@@ -672,7 +903,6 @@ def test_browser_control_advanced(preset="default") -> None:
                             """)
                         except:
                             pass
-                    url = item["query"]
                 elif item["type"] == "plextv":
                     # For Plex TV, navigate to Plex and search
                     plex_search_and_watch(driver, item["query"])
@@ -719,13 +949,16 @@ def test_browser_control_advanced(preset="default") -> None:
         global active_drivers
         active_drivers = drivers
         
-        # Keep the function running to prevent garbage collection
-        print("Press Ctrl+C to exit (windows will stay open)")
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("\nExiting... Windows will remain open.")
+        # Keep the function running to prevent garbage collection (only if keep_alive is True)
+        if keep_alive:
+            print("Press Ctrl+C to exit (windows will stay open)")
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                print("\nExiting... Windows will remain open.")
+        else:
+            print("Windows opened successfully (keep_alive=False, returning immediately)")
                 
     except ImportError:
         print("ERROR: Selenium not installed. Install with: py -3 -m pip install selenium")
