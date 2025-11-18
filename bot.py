@@ -403,9 +403,15 @@ def test_browser_control_advanced(preset="default") -> None:
             ],
             "ow_my_balls": [
                 {"type": "plextv", "query": "failarmy"},
-                {"type": "plextv", "query": "https://www.youtube.com"},
-                {"type": "plextv", "query": "Hot Ones"},
-                {"type": "plextv", "query": "https://www.github.com"}
+                {"type": "plextv", "query": "WipeoutXtra"},
+                {"type": "plextv", "query": "always funny"},
+                {"type": "plextv", "query": "fear factor"}
+            ],
+            "funny": [
+                {"type": "plextv", "query": "national lampoon free"},
+                {"type": "plextv", "query": "failarmy"},
+                {"type": "plextv", "query": "WipeoutXtra"},
+                {"type": "plextv", "query": "always funny"}
             ],
             "news": [
                 {"type": "plextv", "query": "https://www.google.com"},
@@ -463,7 +469,8 @@ def test_browser_control_advanced(preset="default") -> None:
                 # Bottom-left: (0, window_height)
                 # Bottom-right: (window_width, window_height)
                 x = (i % 2) * window_width
-                y = (i // 2) * window_height
+                # Move all windows up by 8px, and bottom row windows up by additional 8px (total 16px)
+                y = (i // 2) * window_height - 8 - (8 if (i // 2) == 1 else 0)
                 
                 # Configure Chrome options for each window (app mode removes toolbars/tabs)
                 chrome_options = Options()
@@ -591,7 +598,14 @@ def test_browser_control_advanced(preset="default") -> None:
                 # Adjust position: negative offset for left/top edges
                 # For right column, also offset to overlap with left column
                 adjusted_x = x + border_offset if x == 0 else (x - horizontal_overlap if x == window_width else x)
-                adjusted_y = y + border_offset if y == 0 else (y - vertical_overlap if y == window_height else y)
+                # Calculate adjusted_y based on original position (before -8 offset)
+                original_y = (i // 2) * window_height
+                if original_y == 0:  # Top row
+                    adjusted_y = y + border_offset
+                elif original_y == window_height:  # Bottom row
+                    adjusted_y = y - vertical_overlap
+                else:
+                    adjusted_y = y
                 
                 # Adjust size: add extra width/height to fill gaps
                 adjusted_width = window_width
