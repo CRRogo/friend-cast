@@ -402,7 +402,7 @@ def test_browser_control_advanced(preset="default") -> None:
                 {"type": "URL", "query": "https://www.github.com"}
             ],
             "ow_my_balls": [
-                {"type": "plextv", "query": "https://www.google.com"},
+                {"type": "plextv", "query": "failarmy"},
                 {"type": "plextv", "query": "https://www.youtube.com"},
                 {"type": "plextv", "query": "Hot Ones"},
                 {"type": "plextv", "query": "https://www.github.com"}
@@ -471,6 +471,83 @@ def test_browser_control_advanced(preset="default") -> None:
                 chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
                 chrome_options.add_experimental_option('useAutomationExtension', False)
                 
+                # Use user's Chrome profile to maintain login sessions
+                # Use a simpler approach: copy only cookies to temp directories
+                import os
+                import tempfile
+                import shutil
+                # On Windows, Chrome user data is typically in AppData\Local\Google\Chrome\User Data
+                chrome_user_data = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Google', 'Chrome', 'User Data')
+                default_profile = os.path.join(chrome_user_data, 'Default')
+                
+                if os.path.exists(default_profile):
+                    # Create a temporary user data directory for this window
+                    temp_user_data = os.path.join(tempfile.gettempdir(), f'chrome_user_data_{i}')
+                    temp_default_profile = os.path.join(temp_user_data, 'Default')
+                    
+                    # Copy essential files to maintain login sessions
+                    # Always copy to ensure we have the latest cookies/storage
+                    os.makedirs(temp_user_data, exist_ok=True)
+                    os.makedirs(temp_default_profile, exist_ok=True)
+                    try:
+                        # Copy essential files for login sessions (always copy to get latest)
+                        essential_files = ['Cookies', 'Preferences', 'Login Data', 'Web Data']
+                        for file_name in essential_files:
+                            src_file = os.path.join(default_profile, file_name)
+                            if os.path.exists(src_file):
+                                dst_file = os.path.join(temp_default_profile, file_name)
+                                try:
+                                    shutil.copy2(src_file, dst_file)
+                                except Exception as e:
+                                    # File might be locked, try again or skip
+                                    pass
+                        
+                        # Copy Local Storage directory (contains localStorage data for sites)
+                        local_storage_src = os.path.join(default_profile, 'Local Storage')
+                        if os.path.exists(local_storage_src):
+                            local_storage_dst = os.path.join(temp_default_profile, 'Local Storage')
+                            # Remove existing and copy fresh
+                            if os.path.exists(local_storage_dst):
+                                shutil.rmtree(local_storage_dst, ignore_errors=True)
+                            try:
+                                shutil.copytree(local_storage_src, local_storage_dst, 
+                                              ignore=shutil.ignore_patterns('*.log', 'LOCK'))
+                            except Exception:
+                                pass
+                        
+                        # Copy Session Storage directory (contains sessionStorage data)
+                        session_storage_src = os.path.join(default_profile, 'Session Storage')
+                        if os.path.exists(session_storage_src):
+                            session_storage_dst = os.path.join(temp_default_profile, 'Session Storage')
+                            # Remove existing and copy fresh
+                            if os.path.exists(session_storage_dst):
+                                shutil.rmtree(session_storage_dst, ignore_errors=True)
+                            try:
+                                shutil.copytree(session_storage_src, session_storage_dst,
+                                              ignore=shutil.ignore_patterns('*.log', 'LOCK'))
+                            except Exception:
+                                pass
+                        
+                        # Copy IndexedDB directory (many modern apps use this for auth tokens)
+                        indexeddb_src = os.path.join(default_profile, 'IndexedDB')
+                        if os.path.exists(indexeddb_src):
+                            indexeddb_dst = os.path.join(temp_default_profile, 'IndexedDB')
+                            # Remove existing and copy fresh
+                            if os.path.exists(indexeddb_dst):
+                                shutil.rmtree(indexeddb_dst, ignore_errors=True)
+                            try:
+                                shutil.copytree(indexeddb_src, indexeddb_dst,
+                                              ignore=shutil.ignore_patterns('*.log', 'LOCK', '*.tmp'))
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        # If copy fails, just use the temp directory (will be fresh profile)
+                        print(f"Warning: Could not copy profile data: {e}")
+                    
+                    chrome_options.add_argument(f'--user-data-dir={temp_user_data}')
+                    chrome_options.add_argument(f'--profile-directory=Default')
+                # If Chrome user data doesn't exist, continue without it (will use default profile)
+                
                 # Determine the initial URL for app mode
                 # For both URL and plextv types, set the URL directly in --app to maintain app mode
                 # For URL types, use the query URL directly
@@ -494,7 +571,9 @@ def test_browser_control_advanced(preset="default") -> None:
                 chrome_options.add_argument("--disable-features=TranslateUI")
                 # Remove address bar and other UI elements
                 chrome_options.add_argument("--hide-scrollbars")
-                chrome_options.add_argument("--mute-audio")
+                # Only mute audio for windows after the first one (index 0)
+                if i > 0:
+                    chrome_options.add_argument("--mute-audio")
                 # Try to force app mode by disabling features that show UI
                 chrome_options.add_argument("--disable-features=BrowserSwitcherUI")
                 chrome_options.add_argument("--disable-features=ChromeWhatsNewUI")
@@ -545,10 +624,55 @@ def test_browser_control_advanced(preset="default") -> None:
                 if item["type"] == "URL":
                     # URL is already loaded via --app flag, wait for it to load
                     time.sleep(1)
+                    # If this window should be muted (i > 0), mute all audio elements
+                    if i > 0:
+                        try:
+                            driver.execute_script("""
+                                // Mute all audio and video elements
+                                document.querySelectorAll('audio, video').forEach(function(media) {
+                                    media.muted = true;
+                                    media.volume = 0;
+                                });
+                                // Also mute any new media elements that get added
+                                var observer = new MutationObserver(function(mutations) {
+                                    document.querySelectorAll('audio, video').forEach(function(media) {
+                                        if (!media.muted) {
+                                            media.muted = true;
+                                            media.volume = 0;
+                                        }
+                                    });
+                                });
+                                observer.observe(document.body, { childList: true, subtree: true });
+                            """)
+                        except:
+                            pass
                     url = item["query"]
                 elif item["type"] == "plextv":
                     # For Plex TV, navigate to Plex and search
                     plex_search_and_watch(driver, item["query"])
+                    # If this window should be muted (i > 0), mute all audio elements
+                    if i > 0:
+                        try:
+                            time.sleep(2)  # Wait a bit for media to load
+                            driver.execute_script("""
+                                // Mute all audio and video elements
+                                document.querySelectorAll('audio, video').forEach(function(media) {
+                                    media.muted = true;
+                                    media.volume = 0;
+                                });
+                                // Also mute any new media elements that get added
+                                var observer = new MutationObserver(function(mutations) {
+                                    document.querySelectorAll('audio, video').forEach(function(media) {
+                                        if (!media.muted) {
+                                            media.muted = true;
+                                            media.volume = 0;
+                                        }
+                                    });
+                                });
+                                observer.observe(document.body, { childList: true, subtree: true });
+                            """)
+                        except:
+                            pass
                     url = f"Plex TV - {item['query']}"
                 else:
                     print(f"Unknown item type: {item['type']}")
