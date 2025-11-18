@@ -414,10 +414,10 @@ def test_browser_control_advanced(preset="default") -> None:
                 {"type": "plextv", "query": "always funny"}
             ],
             "news": [
-                {"type": "plextv", "query": "https://www.google.com"},
-                {"type": "plextv", "query": "https://www.youtube.com"},
-                {"type": "plextv", "query": "Hot Ones"},
-                {"type": "plextv", "query": "https://www.github.com"}
+                {"type": "plextv", "query": "cbs news"},
+                {"type": "plextv", "query": "accuweather now"},
+                {"type": "plextv", "query": "nbc news now"},
+                {"type": "plextv", "query": "CBS News Baltimore"}
             ],
             "sports_bar": [
                 {"type": "plextv", "query": "https://www.google.com"},
@@ -430,6 +430,18 @@ def test_browser_control_advanced(preset="default") -> None:
                 {"type": "plextv", "query": "sweet escapes"},
                 {"type": "plextv", "query": "stingray holidayscapes"},
                 {"type": "plextv", "query": "The great christmas light fight"}
+            ],
+            "vehicles": [
+                {"type": "plextv", "query": "top gear"},
+                {"type": "plextv", "query": "monster jam"},
+                {"type": "plextv", "query": "hot wheels action"},
+                {"type": "plextv", "query": "ice road truckers"}
+            ],
+            "joey": [
+                {"type": "plextv", "query": "hot wheels action"},
+                {"type": "plextv", "query": "monster jam"},
+                {"type": "plextv", "query": "kidoodle tv"},
+                {"type": "plextv", "query": "transformers"}
             ]
         }
         
